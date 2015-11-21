@@ -1,7 +1,7 @@
 # PencilController
 ##### Using Apple Pencil as a 3D Controller for Image Editing
 
-#####_ Companion project to this blog post: http://flexmonkey.blogspot.co.uk/2015/11/pencilcontroller-using-apple-pencil-as.html_
+##### _Companion project to this blog post: http://flexmonkey.blogspot.co.uk/2015/11/pencilcontroller-using-apple-pencil-as.html_
 
 Despite Jony Ive describing the Pencil as being designed for marking and not as a stylus finger replacement in Wallpaper*, I've decided to explore a few unconventional uses for mine. Yesterday saw a slightly ramshackle looking Pencil based electronic scale and today I'm using it as a joystick of sorts for controlling parameters on image filters.
 
