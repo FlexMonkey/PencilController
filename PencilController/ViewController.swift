@@ -30,6 +30,29 @@ class ViewController: UIViewController
     
     let hueAdjust = CIFilter(name: "CIHueAdjust")!
     let colorControls = CIFilter(name: "CIColorControls")!
+    let gammaAdjust = CIFilter(name: "CIGammaAdjust")!
+    let exposureAdjust = CIFilter(name: "CIExposureAdjust")!
+    
+    let hueSaturationButton = ChunkyButton(title: "Hue\nSaturation", filteringMode: .HueSaturation)
+    let brightnessContrastButton = ChunkyButton(title: "Brightness\nContrast", filteringMode: .BrightnessContrast)
+    let gammaExposureButton = ChunkyButton(title: "Gamma\nExposure", filteringMode: .GammaExposure)
+    
+    var hueAngle: CGFloat = 0
+    var saturation: CGFloat = 1
+    var brightness: CGFloat = 0
+    var contrast: CGFloat = 1
+    var gamma: CGFloat = 1
+    var exposure: CGFloat = 0
+    
+    var pencilOn = false
+    
+    var filteringMode = FilteringMode.Off
+    {
+        didSet
+        {
+            label.hidden = filteringMode == .Off
+        }
+    }
     
     override func viewDidLoad()
     {
@@ -38,14 +61,19 @@ class ViewController: UIViewController
         view.backgroundColor = UIColor.blackColor()
         
         view.addSubview(imageView)
-         view.addSubview(label)
+        view.addSubview(label)
         view.addSubview(sceneKitView)
+        
+        view.addSubview(hueSaturationButton)
+        view.addSubview(brightnessContrastButton)
+        view.addSubview(gammaExposureButton)
        
-        label.font = UIFont.monospacedDigitSystemFontOfSize(36, weight: 1)
+        label.font = UIFont.monospacedDigitSystemFontOfSize(36, weight: UIFontWeightSemibold)
         
         label.textAlignment = NSTextAlignment.Center
         label.text = "flexmonkey.blogspot.co.uk"
         label.textColor = UIColor.whiteColor()
+        label.hidden = true
         
         imageView.contentMode = UIViewContentMode.Center
         
@@ -75,18 +103,49 @@ class ViewController: UIViewController
         
         cylinderNode.opacity = 0
         
-        applyFilter(hueAngle: 0, saturation: 1)
+        applyFilter()
+        
+        hueSaturationButton.addTarget(self, action: "filterButtonTouchDown:", forControlEvents: UIControlEvents.TouchDown)
+        hueSaturationButton.addTarget(self, action: "filterButtonTouchEnded:", forControlEvents: UIControlEvents.TouchUpInside)
+        
+        brightnessContrastButton.addTarget(self, action: "filterButtonTouchDown:", forControlEvents: UIControlEvents.TouchDown)
+        brightnessContrastButton.addTarget(self, action: "filterButtonTouchEnded:", forControlEvents: UIControlEvents.TouchUpInside)
+        
+        gammaExposureButton.addTarget(self, action: "filterButtonTouchDown:", forControlEvents: UIControlEvents.TouchDown)
+        gammaExposureButton.addTarget(self, action: "filterButtonTouchEnded:", forControlEvents: UIControlEvents.TouchUpInside)
     }
 
-  
+    func filterButtonTouchDown(button: ChunkyButton)
+    {
+        filteringMode = button.filteringMode
+        
+        updateLabel()
+        
+        if pencilOn
+        {
+            SCNTransaction.setAnimationDuration(0.25)
+            cylinderNode.opacity = 1
+        }
+    }
+    
+    func filterButtonTouchEnded(button: ChunkyButton)
+    {
+        filteringMode = .Off
+        
+        SCNTransaction.setAnimationDuration(0.25)
+        cylinderNode.opacity = 0
+    }
     
     override func touchesBegan(touches: Set<UITouch>, withEvent event: UIEvent?)
     {
         guard let touch = touches.first where
+            filteringMode != .Off &&
             touch.type == UITouchType.Stylus else
         {
             return
         }
+        
+        pencilOn = true
         
         pencilTouchHandler(touch)
         
@@ -97,6 +156,7 @@ class ViewController: UIViewController
     override func touchesMoved(touches: Set<UITouch>, withEvent event: UIEvent?)
     {
         guard let touch = touches.first where
+            filteringMode != .Off &&
             touch.type == UITouchType.Stylus else
         {
             return
@@ -107,6 +167,12 @@ class ViewController: UIViewController
     
     override func touchesEnded(touches: Set<UITouch>, withEvent event: UIEvent?)
     {
+        guard touches.first?.type == UITouchType.Stylus else
+        {
+            return
+        }
+        
+        pencilOn = false
         SCNTransaction.setAnimationDuration(0.25)
         cylinderNode.opacity = 0
     }
@@ -123,23 +189,79 @@ class ViewController: UIViewController
         cylinderNode.position = SCNVector3(hitTestResult.localCoordinates.x, hitTestResult.localCoordinates.y, 0)
         cylinderNode.eulerAngles = SCNVector3(touch.altitudeAngle, 0.0, 0 - touch.azimuthAngleInView(view) - halfPi)
         
-        applyFilter(hueAngle: pi + touch.azimuthAngleInView(view),
-            saturation: 8 * ((halfPi - touch.altitudeAngle) / halfPi))
+        switch filteringMode
+        {
+        case .HueSaturation:
+            hueAngle = pi + touch.azimuthAngleInView(view)
+            saturation = 8 * ((halfPi - touch.altitudeAngle) / halfPi)
+            
+        case .BrightnessContrast:
+            brightness = touch.azimuthUnitVectorInView(view).dx * ((halfPi - touch.altitudeAngle) / halfPi)
+            contrast = 1 + touch.azimuthUnitVectorInView(view).dy * -((halfPi - touch.altitudeAngle) / halfPi)
+
+        case .GammaExposure:
+            gamma = 1 + touch.azimuthUnitVectorInView(view).dx * ((halfPi - touch.altitudeAngle) / halfPi)
+            exposure = touch.azimuthUnitVectorInView(view).dy * -((halfPi - touch.altitudeAngle) / halfPi)
+            
+        case .Off:
+            ()
+        }
+        
+        updateLabel()
+        applyFilter()
     }
 
-    func applyFilter(hueAngle hueAngle: CGFloat, saturation: CGFloat)
+
+    
+    func applyFilter()
     {
-        hueAdjust.setValue(coreImage, forKey: kCIInputImageKey)
-        hueAdjust.setValue(hueAngle, forKey: kCIInputAngleKey)
+        hueAdjust.setValue(coreImage,
+            forKey: kCIInputImageKey)
+        hueAdjust.setValue(hueAngle,
+            forKey: kCIInputAngleKey)
         
-        colorControls.setValue(hueAdjust.valueForKey(kCIOutputImageKey) as! CIImage, forKey: kCIInputImageKey)
-        colorControls.setValue(saturation, forKey: kCIInputSaturationKey)
+        colorControls.setValue(hueAdjust.valueForKey(kCIOutputImageKey) as! CIImage,
+            forKey: kCIInputImageKey)
+        colorControls.setValue(saturation,
+            forKey: kCIInputSaturationKey)
+        colorControls.setValue(brightness,
+            forKey: kCIInputBrightnessKey)
+        colorControls.setValue(contrast,
+            forKey: kCIInputContrastKey)
         
-        let cgImage = self.ciContext.createCGImage(colorControls.valueForKey(kCIOutputImageKey) as! CIImage, fromRect: coreImage.extent)
+        exposureAdjust.setValue(colorControls.valueForKey(kCIOutputImageKey) as! CIImage,
+            forKey: kCIInputImageKey)
+        exposureAdjust.setValue(exposure,
+            forKey: kCIInputEVKey)
+        
+        gammaAdjust.setValue(exposureAdjust.valueForKey(kCIOutputImageKey) as! CIImage,
+            forKey: kCIInputImageKey)
+        gammaAdjust.setValue(gamma,
+            forKey: "inputPower")
+
+        
+        let cgImage = ciContext.createCGImage(gammaAdjust.valueForKey(kCIOutputImageKey) as! CIImage,
+            fromRect: coreImage.extent)
         
         imageView.image =  UIImage(CGImage: cgImage)
-        
-        label.text = String(format: "Hue: %.2f°", hueAngle * 180 / pi) + "      " +  String(format: "Saturation: %.2f", saturation)
+    }
+    
+    func updateLabel()
+    {
+        switch filteringMode
+        {
+        case .HueSaturation:
+            label.text = String(format: "↻Hue: %.2f°", hueAngle * 180 / pi) + "      " +  String(format: "∢Saturation: %.2f", saturation)
+            
+        case .BrightnessContrast:
+            label.text = String(format: "⇔Brightness: %.2f", brightness) + "      " +  String(format: "⇕Contrast: %.2f", contrast)
+
+        case .GammaExposure:
+            label.text = String(format: "⇔Gamma: %.2f", gamma) + "      " +  String(format: "⇕Exposure: %.2f", exposure)
+            
+        case .Off:
+            ()
+        }
     }
     
     func addLights()
@@ -175,7 +297,78 @@ class ViewController: UIViewController
         
         imageView.frame = view.bounds
         sceneKitView.frame = view.bounds
+        
+        // Slightly cobbled together layout :)
+        
+        hueSaturationButton.frame = CGRect(x: 0,
+            y: view.frame.height - hueSaturationButton.intrinsicContentSize().height,
+            width: hueSaturationButton.intrinsicContentSize().width,
+            height: hueSaturationButton.intrinsicContentSize().height)
+        
+        brightnessContrastButton.frame = CGRect(x: hueSaturationButton.intrinsicContentSize().width + 20,
+            y: view.frame.height - hueSaturationButton.intrinsicContentSize().height,
+            width: hueSaturationButton.intrinsicContentSize().width,
+            height: hueSaturationButton.intrinsicContentSize().height)
+        
+        gammaExposureButton.frame = CGRect(x: hueSaturationButton.intrinsicContentSize().width + 20 + hueSaturationButton.intrinsicContentSize().width + 20,
+            y: view.frame.height - hueSaturationButton.intrinsicContentSize().height,
+            width: hueSaturationButton.intrinsicContentSize().width,
+            height: hueSaturationButton.intrinsicContentSize().height)
     }
 
+}
+
+enum FilteringMode
+{
+    case Off
+    case HueSaturation
+    case BrightnessContrast
+    case GammaExposure
+}
+
+class ChunkyButton: UIButton
+{
+    let defaultColor = UIColor(red: 0.25, green: 0.25, blue: 0.75, alpha: 0.5)
+    let highlightedColor = UIColor(red: 0.25, green: 0.25, blue: 0.75, alpha: 1)
+    
+    let filteringMode: FilteringMode
+    
+    required init(title: String, filteringMode: FilteringMode)
+    {
+        self.filteringMode = filteringMode
+        
+        super.init(frame: CGRectZero)
+        
+        titleLabel?.numberOfLines = 2
+        setTitle(title, forState: UIControlState.Normal)
+        titleLabel?.font = UIFont.boldSystemFontOfSize(24)
+        
+        backgroundColor = defaultColor
+        setTitleColor(UIColor.whiteColor(), forState: UIControlState.Highlighted)
+        setTitleColor(UIColor.lightGrayColor(), forState: UIControlState.Normal)
+        
+        layer.borderColor = UIColor.whiteColor().CGColor
+        layer.borderWidth = 2
+        layer.cornerRadius = 5
+    }
+    
+    override var highlighted: Bool
+    {
+        didSet
+        {
+            backgroundColor = highlighted ? highlightedColor : defaultColor
+        }
+    }
+
+    required init?(coder aDecoder: NSCoder)
+    {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func intrinsicContentSize() -> CGSize
+    {
+        return CGSize(width: super.intrinsicContentSize().width + 20,
+            height: super.intrinsicContentSize().height + 10)
+    }
 }
 
